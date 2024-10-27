@@ -1,33 +1,60 @@
-from shiny import App, render, ui
-import matplotlib.pyplot as plt
-import numpy as np
+from shiny import App, ui, render
+import pandas as pd
 
-# Define the app UI
+# Sample data
+data = pd.DataFrame({
+    "Car Make": ["Toyota", "Toyota", "Ford", "Ford", "Honda", "Honda", "Chevrolet", "Chevrolet"],
+    "Model": ["Camry", "Corolla", "Focus", "Fiesta", "Civic", "Accord", "Malibu", "Impala"],
+    "Fuel Type": ["Gasoline", "Diesel", "Gasoline", "Electric", "Gasoline", "Electric", "Diesel", "Gasoline"],
+    "Transmission": ["Automatic", "Manual", "Automatic", "Automatic", "Manual", "Automatic", "Manual", "Automatic"],
+    "Fuel Economy (mpg)": [28, 32, 30, 90, 35, 85, 28, 25]
+})
+
+# Define the UI
 app_ui = ui.page_fluid(
-    ui.h2("Square Function Visualization"),
-    ui.input_slider("x_value", "Choose a value for x:", min=0, max=10, value=5),
-    ui.output_plot("plot")
+    ui.h2("Car Filter and Fuel Economy Viewer"),
+    
+    # Dropdowns for filtering options
+    ui.input_select("car_make", "Select Car Make", choices=list(data["Car Make"].unique()), selected="Toyota"),
+    ui.input_select("fuel_type", "Select Fuel Type", choices=list(data["Fuel Type"].unique()), selected="Gasoline"),
+    ui.input_select("transmission", "Select Transmission Type", choices=list(data["Transmission"].unique()), selected="Automatic"),
+    
+    # Outputs: filtered table and fuel economy summary
+    ui.output_table("car_table"),
+    ui.output_text("fuel_summary")
 )
 
-# Define the server logic
+# Define server logic
 def server(input, output, session):
+    # Reactive table that filters data based on user selections
     @output
-    @render.plot
-    def plot():
-        # Get the current value of x from the slider
-        x = input.x_value()
-        # Compute y as the square of x
-        y = x ** 2
-        # Plot the function
-        x_vals = np.linspace(0, 10, 100)
-        y_vals = x_vals ** 2
-        plt.figure()
-        plt.plot(x_vals, y_vals, label="y = x^2", color="blue")
-        plt.scatter([x], [y], color="red")  # Plot the selected point
-        plt.title(f"y = x^2, where x = {x} and y = {y}")
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.legend()
+    @render.table
+    def car_table():
+        # Apply filters based on input values
+        filtered_data = data[
+            (data["Car Make"] == input.car_make()) &
+            (data["Fuel Type"] == input.fuel_type()) &
+            (data["Transmission"] == input.transmission())
+        ]
+        # Return filtered table
+        return filtered_data if not filtered_data.empty else pd.DataFrame({"Message": ["No matching cars found."]})
 
-# Create the app instance
+    # Reactive text that shows the average fuel economy
+    @output
+    @render.text
+    def fuel_summary():
+        # Filter data based on input values
+        filtered_data = data[
+            (data["Car Make"] == input.car_make()) &
+            (data["Fuel Type"] == input.fuel_type()) &
+            (data["Transmission"] == input.transmission())
+        ]
+        # Calculate average fuel economy or display message if no matches
+        if not filtered_data.empty:
+            avg_fuel_economy = filtered_data["Fuel Economy (mpg)"].mean()
+            return f"Average Fuel Economy: {avg_fuel_economy:.1f} mpg"
+        else:
+            return "No matching cars found."
+
+# Create and run the Shiny app
 app = App(app_ui, server)
