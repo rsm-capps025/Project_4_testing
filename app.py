@@ -1,60 +1,86 @@
-from shiny import App, ui, render
+import numpy as np
 import pandas as pd
+from sklearn.neighbors import KNeighborsClassifier
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, BoundaryNorm
+from shiny import App, ui, render, reactive
 
-# Sample data
+# Prepare data and model
 data = pd.DataFrame({
-    "Car Make": ["Toyota", "Toyota", "Ford", "Ford", "Honda", "Honda", "Chevrolet", "Chevrolet"],
-    "Model": ["Camry", "Corolla", "Focus", "Fiesta", "Civic", "Accord", "Malibu", "Impala"],
-    "Fuel Type": ["Gasoline", "Diesel", "Gasoline", "Electric", "Gasoline", "Electric", "Diesel", "Gasoline"],
-    "Transmission": ["Automatic", "Manual", "Automatic", "Automatic", "Manual", "Automatic", "Manual", "Automatic"],
-    "Fuel Economy (mpg)": [28, 32, 30, 90, 35, 85, 28, 25]
-})
+    'Age': [25, 30, 35, 40, 45, 50],
+    'Weight': [150, 160, 170, 180, 190, 200],
+    'Secretor_y': [0, 1, 0, 1, 0, 1]
+})  # Example data, replace with your actual dataset
 
-# Define the UI
+# Data cleaning
+input_variables = ['Age', 'Weight']
+data_cleaned = data.dropna(subset=input_variables + ['Secretor_y'])
+X = data_cleaned[input_variables].values
+y = data_cleaned['Secretor_y'].values
+
+# Initialize and train the KNN model
+knn = KNeighborsClassifier(n_neighbors=7)
+knn.fit(X, y)
+
+# Define UI for the Shiny app
 app_ui = ui.page_fluid(
-    ui.h2("Car Filter and Fuel Economy Viewer"),
+    ui.h2("KNN Model Prediction App"),
     
-    # Dropdowns for filtering options
-    ui.input_select("car_make", "Select Car Make", choices=list(data["Car Make"].unique()), selected="Toyota"),
-    ui.input_select("fuel_type", "Select Fuel Type", choices=list(data["Fuel Type"].unique()), selected="Gasoline"),
-    ui.input_select("transmission", "Select Transmission Type", choices=list(data["Transmission"].unique()), selected="Automatic"),
+    # Inputs for Age and Weight
+    ui.input_slider("age", "Age:", min(X[:, 0]), max(X[:, 0]), 30),
+    ui.input_slider("weight", "Weight:", min(X[:, 1]), max(X[:, 1]), 160),
     
-    # Outputs: filtered table and fuel economy summary
-    ui.output_table("car_table"),
-    ui.output_text("fuel_summary")
+    # Output area for predictions
+    ui.output_text("prediction_text"),
+    
+    # Output area for scatter plot
+    ui.output_plot("scatter_plot")
 )
 
-# Define server logic
+# Server logic
 def server(input, output, session):
-    # Reactive table that filters data based on user selections
-    @output
-    @render.table
-    def car_table():
-        # Apply filters based on input values
-        filtered_data = data[
-            (data["Car Make"] == input.car_make()) &
-            (data["Fuel Type"] == input.fuel_type()) &
-            (data["Transmission"] == input.transmission())
-        ]
-        # Return filtered table
-        return filtered_data if not filtered_data.empty else pd.DataFrame({"Message": ["No matching cars found."]})
-
-    # Reactive text that shows the average fuel economy
+    
+    # Reactive to make predictions based on slider inputs
+    @reactive.Calc
+    def prediction():
+        X_new = np.array([[input.age(), input.weight()]])
+        prediction = knn.predict(X_new)
+        return prediction[0]
+    
+    # Display the prediction
     @output
     @render.text
-    def fuel_summary():
-        # Filter data based on input values
-        filtered_data = data[
-            (data["Car Make"] == input.car_make()) &
-            (data["Fuel Type"] == input.fuel_type()) &
-            (data["Transmission"] == input.transmission())
-        ]
-        # Calculate average fuel economy or display message if no matches
-        if not filtered_data.empty:
-            avg_fuel_economy = filtered_data["Fuel Economy (mpg)"].mean()
-            return f"Average Fuel Economy: {avg_fuel_economy:.1f} mpg"
-        else:
-            return "No matching cars found."
+    def prediction_text():
+        return f"Predicted Secretor_y for input values: {prediction()}"
+    
+    # Render scatter plot with training data and prediction point
+    @output
+    @render.plot
+    def scatter_plot():
+        plt.figure(figsize=(8, 6))
+        
+        # Define custom colormap and norm for discrete values
+        cmap = ListedColormap(['blue', 'red'])
+        norm = BoundaryNorm([0, 0.5, 1], cmap.N)  # Discrete boundaries for 0 and 1
+        
+        # Scatter plot for existing data with discrete color mapping
+        scatter = plt.scatter(X[:, 0], X[:, 1], c=y, cmap=cmap, norm=norm, edgecolor='k', label='Training Data')
+        
+        # Plot new prediction point
+        plt.scatter(input.age(), input.weight(), c='black', marker='x', s=100, label='New Prediction')
+        
+        # Label the plot
+        plt.xlabel('Age')
+        plt.ylabel('Weight')
+        
+        # Create color bar with custom labels
+        cbar = plt.colorbar(scatter, ticks=[0, 1])
+        cbar.ax.set_yticklabels(['Non-Secretor', 'Secretor'])
+        plt.legend()
+        plt.title('KNN Classification with New Data Point')
+        plt.grid(True)
+        
+    return prediction_text, scatter_plot
 
-# Create and run the Shiny app
+# Create and run the app
 app = App(app_ui, server)
